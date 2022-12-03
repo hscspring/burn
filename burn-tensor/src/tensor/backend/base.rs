@@ -1,8 +1,6 @@
-use crate::ops::activation::*;
+use super::Gradients;
 use crate::ops::*;
 use crate::tensor::Element;
-use crate::tensor::{Data, Distribution, Shape};
-use crate::Gradients;
 
 pub trait Backend:
     TensorOps<Self>
@@ -21,18 +19,8 @@ pub trait Backend:
     type FullPrecisionBackend: Backend<Elem = Self::FullPrecisionElem, Device = Self::Device>;
     type IntegerBackend: Backend<Elem = i64, Device = Self::Device>;
     type TensorPrimitive<const D: usize>: std::ops::Add<Self::TensorPrimitive<D>, Output = Self::TensorPrimitive<D>>
-        + TensorOpsDetach<Self::Elem, D>
-        + Zeros<Self::TensorPrimitive<D>>
-        + Ones<Self::TensorPrimitive<D>>
-        + TensorOpsPrecision<Self, D>
-        + TensorOpsAggregation<Self, D>
-        + TensorOpsExp<Self::Elem, D>
-        + TensorOpsArg<Self, D>
-        + TensorOpsCat<Self::Elem, D>
-        + TensorOpsLog<Self::Elem, D>
-        + TensorOpsErf<Self::Elem, D>
-        + TensorOpsPow<Self::Elem, D>
-        + ReLU<Self::Elem, D>
+        + Zeros
+        + Ones
         + Clone
         + Send
         + Sync
@@ -41,35 +29,16 @@ pub trait Backend:
         + 'static
         + std::fmt::Debug;
 
-    type BoolTensorPrimitive<const D: usize>: Clone + Send + Sync + 'static + std::fmt::Debug;
-
-    fn from_data<const D: usize>(
-        data: Data<Self::Elem, D>,
-        device: Self::Device,
-    ) -> Self::TensorPrimitive<D>;
-
-    fn from_data_bool<const D: usize>(
-        data: Data<bool, D>,
-        device: Self::Device,
-    ) -> Self::BoolTensorPrimitive<D>;
+    type BoolTensorPrimitive<const D: usize>: Clone
+        + Send
+        + Sync
+        + 'static
+        + std::fmt::Debug
+        + From<<Self::IntegerBackend as Backend>::BoolTensorPrimitive<D>>;
 
     fn ad_enabled() -> bool;
     fn name() -> String;
     fn seed(seed: u64);
-
-    fn random<const D: usize>(
-        shape: Shape<D>,
-        distribution: Distribution<Self::Elem>,
-        device: Self::Device,
-    ) -> Self::TensorPrimitive<D>;
-
-    fn zeros<const D: usize>(shape: Shape<D>, device: Self::Device) -> Self::TensorPrimitive<D> {
-        Self::from_data(Data::zeros(shape), device)
-    }
-
-    fn ones<const D: usize>(shape: Shape<D>, device: Self::Device) -> Self::TensorPrimitive<D> {
-        Self::from_data(Data::ones(shape), device)
-    }
 }
 
 pub(crate) type ADBackendTensorPrimitive<const D: usize, B> =
@@ -77,11 +46,12 @@ pub(crate) type ADBackendTensorPrimitive<const D: usize, B> =
 
 pub trait ADBackend: Backend {
     type InnerBackend: Backend<Device = Self::Device, Elem = Self::Elem>;
+    type Gradients: Gradients<Self>;
 
-    fn backward<const D: usize>(tensor: &Self::TensorPrimitive<D>) -> Gradients;
+    fn backward<const D: usize>(tensor: &Self::TensorPrimitive<D>) -> Self::Gradients;
     fn grad<const D: usize>(
         tensor: &Self::TensorPrimitive<D>,
-        grads: &Gradients,
+        grads: &Self::Gradients,
     ) -> Option<ADBackendTensorPrimitive<D, Self>>;
     fn inner<const D: usize>(
         tensor: &Self::TensorPrimitive<D>,

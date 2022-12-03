@@ -2,9 +2,9 @@ use crate as burn;
 
 use crate::config::Config;
 use crate::module::Module;
-use crate::module::{Forward, Param};
+use crate::module::Param;
 use crate::tensor::backend::Backend;
-use crate::tensor::{Distribution, ElementConversion, Tensor};
+use crate::tensor::{Distribution, Tensor};
 
 /// Configuration to create an [Embedding](Embedding) layer.
 #[derive(Config)]
@@ -16,26 +16,36 @@ pub struct EmbeddingConfig {
 }
 
 /// Lookup table to store a fix number of vectors.
+///
+/// # Params
+///
+/// - weight: Matrix of shape `[n_embedding, d_model]` initialized from a normal distribution:
+///     `N(0, 1)`
 #[derive(Module, Debug)]
 pub struct Embedding<B: Backend> {
     weight: Param<Tensor<B, 2>>,
 }
 
 impl<B: Backend> Embedding<B> {
+    /// Create the module from the given configuration.
     pub fn new(config: &EmbeddingConfig) -> Self {
-        let start = -1.0 / f64::sqrt(config.d_model as f64);
-        let end = 1.0 / f64::sqrt(config.d_model as f64);
-        let distribution = Distribution::Uniform(start.to_elem(), end.to_elem());
-        let weight = Tensor::random([config.n_embedding, config.d_model], distribution);
+        let weight = Tensor::random(
+            [config.n_embedding, config.d_model],
+            Distribution::Normal(0.0, 1.0),
+        );
 
         Self {
             weight: Param::new(weight),
         }
     }
-}
 
-impl<B: Backend> Forward<Tensor<B::IntegerBackend, 2>, Tensor<B, 3>> for Embedding<B> {
-    fn forward(&self, input: Tensor<B::IntegerBackend, 2>) -> Tensor<B, 3> {
+    /// Applies the forward pass on the input tensor.
+    ///
+    /// # Shapes
+    ///
+    /// - input: [batch_size, seq_length]
+    /// - output: [batch_size, d_model]
+    pub fn forward(&self, input: Tensor<B::IntegerBackend, 2>) -> Tensor<B, 3> {
         burn_tensor::module::embedding(&self.weight, &input)
     }
 }

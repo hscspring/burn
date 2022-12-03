@@ -1,11 +1,12 @@
+use crate as burn;
+
 use super::decay::{WeightDecay, WeightDecayConfig};
 use super::momentum::{Momentum, MomentumConfig};
-use crate as burn;
 use crate::config::Config;
 use crate::module::{ParamId, StateNamed};
 use crate::optim::Optimizer;
 use crate::tensor::backend::ADBackend;
-use crate::tensor::{ElementConversion, Gradients, Tensor};
+use crate::tensor::{ElementConversion, Tensor};
 
 /// Configuration to create the [Sgd](Sgd) optimizer.
 #[derive(Config)]
@@ -52,7 +53,7 @@ impl<B: ADBackend> Optimizer for Sgd<B> {
         &mut self,
         id: &ParamId,
         tensor: &mut Tensor<B, D>,
-        grads: &Gradients,
+        grads: &B::Gradients,
     ) {
         if let Some(grad) = tensor.grad(grads) {
             let grad = match &mut self.weight_decay {
@@ -99,7 +100,7 @@ impl<B: ADBackend> Optimizer for Sgd<B> {
 mod tests {
     use super::*;
     use crate::{
-        module::{Forward, Module},
+        module::Module,
         nn::{Linear, LinearConfig},
         tensor::{Distribution, Shape},
         TestADBackend,

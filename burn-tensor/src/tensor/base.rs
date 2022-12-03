@@ -1,8 +1,5 @@
-use crate::graph::grad::Gradients;
-use crate::tensor::backend::ADBackend;
+use crate::backend::ADBackend;
 use crate::tensor::backend::Backend;
-use crate::tensor::ops::activation::*;
-use crate::tensor::ops::*;
 use crate::tensor::stats;
 use crate::tensor::ElementConversion;
 use crate::tensor::{Data, Distribution, Shape};
@@ -34,6 +31,14 @@ impl<const D: usize, B> Tensor<B, D>
 where
     B: Backend,
 {
+    pub fn from_primitive(tensor: B::TensorPrimitive<D>) -> Self {
+        Self::new(tensor)
+    }
+
+    pub fn into_primitive(self) -> B::TensorPrimitive<D> {
+        self.value
+    }
+
     pub(crate) fn new(tensor: B::TensorPrimitive<D>) -> Self {
         Self { value: tensor }
     }
@@ -61,28 +66,28 @@ where
     ///
     /// `y = e^x`
     pub fn exp(&self) -> Self {
-        Self::new(self.value.exp())
+        Self::new(B::exp(&self.value))
     }
 
     /// Applies element wise natural log operation *ln*.
     ///
     /// `y = log(x)`
     pub fn log(&self) -> Self {
-        Self::new(self.value.log())
+        Self::new(B::log(&self.value))
     }
 
     /// Applies the [error function](https://en.wikipedia.org/wiki/Error_function) element wise.
     ///
     /// `y = erf(x)`
     pub fn erf(&self) -> Self {
-        Self::new(self.value.erf())
+        Self::new(B::erf(&self.value))
     }
 
     /// Applies element wise power operation.
     ///
     /// `y = x^a`
     pub fn powf(&self, value: f32) -> Self {
-        Self::new(self.value.powf(value))
+        Self::new(B::powf(&self.value, value))
     }
 
     /// Returns the shape of the current tensor.
@@ -93,8 +98,8 @@ where
     /// Returns the dimensions of the current tensor.
     ///
     /// Equivalent to `tensor.shape().dims`.
-    pub fn dims(&self) -> &[usize; D] {
-        &B::shape(&self.value).dims
+    pub fn dims(&self) -> [usize; D] {
+        B::shape(&self.value).dims
     }
 
     /// Returns the data of the current tensor.
@@ -257,22 +262,22 @@ where
 
     /// Aggregate all elements in the tensor with the mean operation.
     pub fn mean(&self) -> Tensor<B, 1> {
-        Tensor::new(self.value.mean())
+        Tensor::new(B::mean(&self.value))
     }
 
     /// Aggregate all elements in the tensor with the sum operation.
     pub fn sum(&self) -> Tensor<B, 1> {
-        Tensor::new(self.value.sum())
+        Tensor::new(B::sum(&self.value))
     }
 
     /// Aggregate all elements along the given *dimension* or *axis* in the tensor with the mean operation.
     pub fn mean_dim(&self, dim: usize) -> Self {
-        Self::new(self.value.mean_dim(dim))
+        Self::new(B::mean_dim(&self.value, dim))
     }
 
     /// Aggregate all elements along the given *dimension* or *axis* in the tensor with the sum operation.
     pub fn sum_dim(&self, dim: usize) -> Self {
-        Self::new(self.value.sum_dim(dim))
+        Self::new(B::sum_dim(&self.value, dim))
     }
 
     /// Calculate the variance along the given dimension.
@@ -454,13 +459,12 @@ where
 
     /// Returns a tensor with full precision based on the selected backend.
     pub fn to_full_precision(&self) -> Tensor<B::FullPrecisionBackend, D> {
-        Tensor::new(self.value.to_full_precision())
+        Tensor::new(B::to_full_precision(&self.value))
     }
 
     /// Returns a tensor on the selected backend from a full precision tensor.
     pub fn from_full_precision(tensor: Tensor<B::FullPrecisionBackend, D>) -> Self {
-        let value = B::TensorPrimitive::from_full_precision(tensor.value);
-        Tensor::new(value)
+        Self::new(B::from_full_precision(&tensor.value))
     }
 
     /// Applies the argmax function along the given dimension and returns an integer tensor.
@@ -479,7 +483,7 @@ where
     /// }
     /// ```
     pub fn argmax(&self, dim: usize) -> Tensor<B::IntegerBackend, D> {
-        Tensor::new(self.value.argmax(dim))
+        Tensor::new(B::argmax(&self.value, dim))
     }
 
     /// Applies the argmin function along the given dimension and returns an integer tensor.
@@ -498,7 +502,7 @@ where
     /// }
     /// ```
     pub fn argmin(&self, dim: usize) -> Tensor<B::IntegerBackend, D> {
-        Tensor::new(self.value.argmin(dim))
+        Tensor::new(B::argmin(&self.value, dim))
     }
 
     /// Concatenates all tensors into a new one along the given dimension.
@@ -507,11 +511,10 @@ where
     ///
     /// If all tensors don't have the same shape.
     pub fn cat(tensors: Vec<Self>, dim: usize) -> Self {
-        let tensors: Vec<B::TensorPrimitive<D>> = tensors.into_iter().map(|a| a.value).collect();
-        let tensors: Vec<&B::TensorPrimitive<D>> = tensors.iter().collect();
-        let value = B::TensorPrimitive::cat(tensors, dim);
-
-        Self::new(value)
+        Self::new(B::cat(
+            &tensors.into_iter().map(|t| t.value).collect::<Vec<_>>(),
+            dim,
+        ))
     }
 
     /// Detach the current tensor from the autodiff graph.
@@ -519,7 +522,7 @@ where
     /// This can be used in batchers or elsewere to ensure that previous operations are not
     /// considered in the autodiff graph.
     pub fn detach(self) -> Self {
-        Self::new(self.value.detach())
+        Self::new(B::detach(&self.value))
     }
 
     /// Unsqueeze the current tensor. Create new dimensions to fit the given size.
@@ -569,7 +572,7 @@ where
     }
 
     pub(crate) fn relu(&self) -> Self {
-        Self::new(self.value.relu())
+        Self::new(B::relu(&self.value))
     }
 }
 
@@ -666,11 +669,11 @@ where
 }
 
 impl<const D: usize, B: ADBackend> Tensor<B, D> {
-    pub fn backward(&self) -> Gradients {
+    pub fn backward(&self) -> B::Gradients {
         B::backward::<D>(&self.value)
     }
 
-    pub fn grad(&self, grads: &Gradients) -> Option<Tensor<B::InnerBackend, D>> {
+    pub fn grad(&self, grads: &B::Gradients) -> Option<Tensor<B::InnerBackend, D>> {
         B::grad(&self.value, grads).map(Tensor::new)
     }
 

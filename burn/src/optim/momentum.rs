@@ -1,9 +1,11 @@
-use super::{load_state_gradients, register_state_gradients};
 use crate as burn;
+
+use super::{load_state_gradients, register_state_gradients};
 use crate::config::Config;
 use crate::module::{ParamId, StateNamed};
 use crate::tensor::backend::ADBackend;
-use crate::tensor::{ElementConversion, Gradients, Tensor};
+use crate::tensor::{ElementConversion, Tensor};
+use burn_tensor::backend::Gradients;
 
 /// Configuration to create momentum [Momentum](Momentum).
 #[derive(Config)]
@@ -24,7 +26,7 @@ pub struct Momentum<B: ADBackend> {
     momentum: B::Elem,
     dampening: f64,
     nesterov: bool,
-    velocity: Gradients,
+    velocity: B::Gradients,
 }
 
 impl<B: ADBackend> Momentum<B> {
@@ -32,7 +34,7 @@ impl<B: ADBackend> Momentum<B> {
         Self {
             momentum: config.momentum.to_elem(),
             dampening: config.dampening,
-            velocity: Gradients::empty(),
+            velocity: B::Gradients::empty(),
             nesterov: config.nesterov,
         }
     }
@@ -44,7 +46,7 @@ impl<B: ADBackend> Momentum<B> {
     ) -> Tensor<B::InnerBackend, D> {
         let id = id.to_string();
 
-        let velocity = match self.velocity.get::<Tensor<B::InnerBackend, D>>(&id) {
+        let velocity = match self.velocity.get::<D>(&id) {
             Some(grad_last_step) => grad
                 .mul_scalar(1.0 - self.dampening)
                 .add(&grad_last_step.mul_scalar(self.momentum)),
@@ -52,7 +54,7 @@ impl<B: ADBackend> Momentum<B> {
         };
 
         // Update velocity
-        self.velocity.register_any(id, velocity.clone());
+        self.velocity.register(id, velocity.clone());
 
         match self.nesterov {
             true => velocity.mul_scalar(self.momentum).add(&grad),
